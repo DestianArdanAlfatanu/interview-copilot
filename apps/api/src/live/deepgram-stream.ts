@@ -8,6 +8,8 @@ export interface DeepgramOptions {
   language: string;
   endpointingMs: number;
   utteranceEndMs: number;
+  /** Keyterm prompting (Nova-3): boosts recognition of these exact terms. */
+  keyterms: string[];
   label: string;
 }
 
@@ -109,6 +111,7 @@ export class DeepgramStream extends EventEmitter {
       utterance_end_ms: String(this.opts.utteranceEndMs),
       vad_events: 'true',
     });
+    for (const term of this.opts.keyterms) params.append('keyterm', term);
     const ws = new WebSocket(`wss://api.deepgram.com/v1/listen?${params}`, {
       headers: { Authorization: `Token ${this.opts.apiKey}` },
     });

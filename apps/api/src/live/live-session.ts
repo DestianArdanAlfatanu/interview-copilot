@@ -16,6 +16,7 @@ import {
   type LlmUsage,
   type ServerEvent,
   type Speaker,
+  type TurnCloseTrigger,
 } from '@ic/shared';
 import type { AppConfig } from '../config/app-config.service';
 import type { PrismaService } from '../prisma/prisma.service';
@@ -73,6 +74,8 @@ export class LiveSession {
 
   private turns: Turn[] = [];
   private hrBuffer: Segment[] = [];
+  /** Latest HR interim text not yet finalized by Deepgram (for diagnosing slow turn closes). */
+  private hrInterim = '';
   private active?: ActiveAnswer;
   /** Most recent answer (any state) — target of Space with empty buffer / R. */
   private last?: ActiveAnswer;
@@ -93,6 +96,7 @@ export class LiveSession {
     private readonly ctx: PromptContext,
     private readonly deps: { config: AppConfig; llm: LlmService; prisma: PrismaService },
     private readonly baseline: { sttSecondsHr: number; sttSecondsUser: number },
+    private readonly keyterms: string[],
   ) {
     this.logger = new Logger(`Live ${sessionId.slice(0, 8)}`);
     this.system = buildSystem(ctx);
@@ -104,6 +108,7 @@ export class LiveSession {
         language: ctx.language,
         endpointingMs: deps.config.get('DG_ENDPOINTING_MS'),
         utteranceEndMs: deps.config.get('DG_UTTERANCE_END_MS'),
+        keyterms,
         label: speaker,
       });
     this.streams = { hr: dg('hr'), user: dg('user') };
@@ -144,7 +149,7 @@ export class LiveSession {
         data: { status: 'live', startedAt: new Date() },
       }),
     );
-    this.send({ type: 'session.ready', sessionId: this.sessionId, mock: this.deps.llm.isMock });
+    this.send({ type: 'session.ready', sessionId: this.sessionId, mock: this.deps.llm.isMock, keyterms: this.keyterms });
     if (!this.deps.llm.isMock && !this.deps.llm.hasKey) this.send({ type: 'error', code: 'no_anthropic_key', message: 'ANTHROPIC_API_KEY belum diisi di .env.' });
     if (!this.deps.config.get('DEEPGRAM_API_KEY'))
       this.send({ type: 'error', code: 'no_deepgram_key', message: 'DEEPGRAM_API_KEY belum diisi di .env.' });
@@ -247,6 +252,8 @@ export class LiveSession {
       if (r.isFinal || words >= INTERIM_ABORT_MIN_WORDS) this.takeBackActiveTurn();
     }
 
+    if (r.text) this.hrInterim = r.isFinal ? '' : r.text;
+
     if (r.isFinal && r.text) {
       const utteranceId = this.saveUtterance('hr', r);
       this.hrBuffer.push({ utteranceId, text: r.text, endWall: r.endWall });
@@ -268,14 +275,22 @@ export class LiveSession {
     return turn;
   }
 
-  private closeTurn(reason: string, force = false) {
-    if (this.paused || this.ended || this.hrBuffer.length === 0) return;
+  private closeTurn(trigger: TurnCloseTrigger, force = false) {
+    if (this.paused || this.ended) return;
+    if (this.hrBuffer.length === 0) {
+      // A close signal arrived but Deepgram hasn't finalized HR's words yet — the turn will only
+      // close when that final shows up. This is the slow path behind multi-second closes.
+      if (this.hrInterim) this.logger.log(`turn: ${trigger} ignored, HR text not final yet: "${this.hrInterim}"`);
+      return;
+    }
     const segments = this.hrBuffer;
     this.hrBuffer = [];
     const question = segments.map((s) => s.text).join(' ');
     const turns = this.turns.slice(-this.maxTurns);
     const turnRef = this.pushTurn('hr', question); // QD-04: kept in context even if skipped
-    this.logger.debug(`turn closed (${reason}): ${question}`);
+    const hrSpeechEnd = segments.at(-1)!.endWall;
+    const turnClosed = Date.now();
+    this.logger.log(`turn closed by ${trigger} after ${turnClosed - hrSpeechEnd} ms: ${question}`);
     this.ask({
       question,
       segments,
@@ -283,7 +298,7 @@ export class LiveSession {
       turnRef,
       manual: false,
       force,
-      latency: { hrSpeechEnd: segments.at(-1)!.endWall, turnClosed: Date.now() },
+      latency: { hrSpeechEnd, turnClosed, trigger },
     });
   }
 
@@ -303,7 +318,15 @@ export class LiveSession {
     const turns = this.turns.slice(-this.maxTurns);
     const turnRef = this.pushTurn('hr', text);
     const now = Date.now();
-    this.ask({ question: text, segments: [], turns, turnRef, manual: true, force: true, latency: { turnClosed: now } });
+    this.ask({
+      question: text,
+      segments: [],
+      turns,
+      turnRef,
+      manual: true,
+      force: true,
+      latency: { turnClosed: now, trigger: 'manual' },
+    });
   }
 
   private regenerate(answerId: string, force: boolean) {
@@ -319,7 +342,7 @@ export class LiveSession {
         turnRef: undefined,
         manual: true,
         force,
-        latency: { turnClosed: Date.now() },
+        latency: { turnClosed: Date.now(), trigger: 'regenerate' },
       },
       answerId,
     );
@@ -495,7 +518,7 @@ export class LiveSession {
     a.latencyCounted = true;
     (a.latency.mock ? this.mockSamples : this.firstWordSamples).push(ms);
     this.logger.log(
-      `${a.latency.mock ? 'MOCK ' : ''}latency ${ms} ms | ${stageLog(a.latency)} | in=${a.usage?.inputTokens} cache_read=${a.usage?.cacheReadTokens} cache_write=${a.usage?.cacheWriteTokens} out=${a.usage?.outputTokens}`,
+      `${a.latency.mock ? 'MOCK ' : ''}latency ${ms} ms | trigger=${a.latency.trigger} ${stageLog(a.latency)} | in=${a.usage?.inputTokens} cache_read=${a.usage?.cacheReadTokens} cache_write=${a.usage?.cacheWriteTokens} out=${a.usage?.outputTokens}`,
     );
     this.emitMetrics({ ...latencyPayload(a.latency), answerId: a.id, mock: Boolean(a.latency.mock) });
   }
@@ -655,6 +678,7 @@ function latencyPayload(l: AnswerLatency): AnswerLatencyPayload {
   const rel = (t?: number) => (t === undefined ? undefined : t - base);
   return {
     firstWordMs: firstWordLatencyMs(l),
+    trigger: l.trigger,
     stages: {
       turnClosed: rel(l.turnClosed),
       requestSent: rel(l.requestSent),

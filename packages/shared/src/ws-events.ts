@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { SPEAKERS } from './constants';
-import type { LatencySummary } from './latency';
+import type { LatencySummary, TurnCloseTrigger } from './latency';
 
 /* ---------- client → server (JSON text frames; audio goes as binary frames) ---------- */
 
@@ -26,11 +26,13 @@ export type SttChannelName = (typeof SPEAKERS)[number];
 export interface AnswerLatencyPayload {
   /** HR end of speech → first token on screen (or server first token if not rendered yet). */
   firstWordMs?: number;
+  trigger?: TurnCloseTrigger;
   stages: Record<string, number | undefined>;
 }
 
 export type ServerEvent =
-  | { type: 'session.ready'; sessionId: string; mock: boolean }
+  /** keyterms: what both Deepgram streams were primed with (manual first, then auto). */
+  | { type: 'session.ready'; sessionId: string; mock: boolean; keyterms: string[] }
   | { type: 'transcript'; speaker: SttChannelName; text: string; isFinal: boolean; startMs: number }
   | { type: 'answer.start'; answerId: string; questionText: string; manual: boolean; mock: boolean }
   | { type: 'answer.delta'; answerId: string; text: string }

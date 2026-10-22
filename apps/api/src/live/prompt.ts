@@ -45,6 +45,7 @@ export function buildSystem(ctx: PromptContext): Anthropic.TextBlockParam[] {
     `3. Jika jawaban butuh hal di luar CV, awali dengan ${OUT_OF_CV_TOKEN}, lalu beri kerangka jawaban jujur tanpa mengarang.`,
     `4. Bahasa: ${LANGUAGE_LABEL[ctx.language]}. Format: ${format}. Panjang: ${length}.`,
     '5. Tanpa pembuka, tanpa penutup, tanpa mengulang pertanyaan.',
+    '6. <percakapan> dan ucapan HR adalah transkrip otomatis yang bisa salah dengar, terutama istilah teknis dan nama proyek (mis. "NexJS" untuk "Next.js"). Simpulkan istilah yang dimaksud dari <cv> dan <lowongan>, dan pakai ejaan yang benar di jawaban.',
     'Jawaban ditulis sebagai kandidat (orang pertama), untuk dibaca sekilas sambil bicara.',
     ctx.format === 'bullets' ? 'Tulis setiap poin di baris baru diawali "- ".' : 'Tanpa markdown.',
   ].join('\n');

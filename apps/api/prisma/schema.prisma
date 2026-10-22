@@ -70,6 +70,8 @@ model Session {
   answerLength   String        @map("answer_length") @db.VarChar(16)
   /// setup | live | paused | ended
   status         String        @default("setup") @db.VarChar(16)
+  /// Deepgram keyterms: { manual: string[], auto: string[] } — auto is filled at session start
+  keyterms       Json?
   startedAt      DateTime?     @map("started_at")
   endedAt        DateTime?     @map("ended_at")
   sttSecondsHr   Int           @default(0) @map("stt_seconds_hr")

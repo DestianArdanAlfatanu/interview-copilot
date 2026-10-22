@@ -78,5 +78,6 @@ export const api = {
     language: Language;
     answerFormat: AnswerFormat;
     answerLength: AnswerLength;
+    keyterms?: string[];
   }) => request<Session>('/api/sessions', { method: 'POST', body: JSON.stringify(input) }),
 };

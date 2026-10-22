@@ -4,6 +4,8 @@ import {
   ANSWER_FORMATS,
   ANSWER_LENGTHS,
   LANGUAGES,
+  MAX_KEYTERM_CHARS,
+  MAX_MANUAL_KEYTERMS,
   firstWordLatencyMs,
   summarize,
   type AnswerLatency,
@@ -17,6 +19,11 @@ const createSessionSchema = z.object({
   language: z.enum(LANGUAGES),
   answerFormat: z.enum(ANSWER_FORMATS),
   answerLength: z.enum(ANSWER_LENGTHS),
+  /** Extra Deepgram keyterms typed in setup; auto-extracted ones are added at session start. */
+  keyterms: z
+    .array(z.string().trim().min(1).max(MAX_KEYTERM_CHARS, `Istilah maksimal ${MAX_KEYTERM_CHARS} karakter.`))
+    .max(MAX_MANUAL_KEYTERMS, `Maksimal ${MAX_MANUAL_KEYTERMS} istilah tambahan.`)
+    .default([]),
 });
 
 @Controller('api/sessions')
@@ -49,7 +56,8 @@ export class SessionsController {
       this.prisma.job.findUnique({ where: { id: input.jobId } }),
     ]);
     if (!cv || !job) throw new NotFoundException('CV atau lowongan tidak ditemukan.');
-    return this.prisma.session.create({ data: input });
+    const { keyterms, ...data } = input;
+    return this.prisma.session.create({ data: { ...data, keyterms: { manual: keyterms } } });
   }
 
   /**

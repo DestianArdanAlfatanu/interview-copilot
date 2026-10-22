@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { Check, Copy, RotateCcw, X } from 'lucide-react';
 import { toast } from 'sonner';
 import type { SttState } from '@ic/shared';
@@ -85,6 +85,7 @@ export const AnswerCard = memo(function AnswerCard({
   onRegenerate: (id: string) => void;
   onDismiss: (id: string) => void;
 }) {
+  const [questionOpen, setQuestionOpen] = useState(false);
   const copy = async () => {
     await navigator.clipboard.writeText(answer.text);
     toast.success('Jawaban disalin');
@@ -99,7 +100,19 @@ export const AnswerCard = memo(function AnswerCard({
       )}
     >
       <header className="mb-2 flex items-start justify-between gap-3">
-        <p className="text-sm text-muted-foreground">{answer.question}</p>
+        {/* Long HR turns would push the answer down: clamp to 2 lines, click to expand. */}
+        <button
+          type="button"
+          onClick={() => setQuestionOpen((v) => !v)}
+          aria-expanded={questionOpen}
+          title={questionOpen ? 'Klik untuk ringkas' : 'Klik untuk lihat pertanyaan penuh'}
+          className={cn(
+            'min-w-0 cursor-pointer text-left text-sm text-muted-foreground hover:text-foreground',
+            !questionOpen && 'line-clamp-2',
+          )}
+        >
+          {answer.question}
+        </button>
         <div className="flex shrink-0 items-center gap-1">
           {answer.mock && (
             <Badge variant="mock" title="LIVE_LLM=mock — jawaban simulasi, bukan dari Claude">

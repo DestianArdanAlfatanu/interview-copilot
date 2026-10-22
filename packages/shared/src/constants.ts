@@ -20,3 +20,17 @@ export const SPEAKERS = ['hr', 'user'] as const;
 export type Speaker = (typeof SPEAKERS)[number];
 
 export const JOB_DESCRIPTION_MIN_CHARS = 200;
+
+/** Deepgram keyterm prompting: auto-extracted from CV + job, plus manual extras from setup. */
+export const MAX_AUTO_KEYTERMS = 50;
+export const MAX_MANUAL_KEYTERMS = 30;
+export const MAX_KEYTERM_CHARS = 40;
+
+/** Setup field → term list: one per line or comma-separated. */
+export function parseKeyterms(input: string): string[] {
+  const seen = new Set<string>();
+  return input
+    .split(/[\n,;]+/)
+    .map((t) => t.trim().replace(/\s+/g, ' '))
+    .filter((t) => t && !seen.has(t.toLowerCase()) && seen.add(t.toLowerCase()));
+}

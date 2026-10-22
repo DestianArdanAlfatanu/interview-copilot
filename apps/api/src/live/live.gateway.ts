@@ -7,6 +7,7 @@ import { AppConfig } from '../config/app-config.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from './llm.service';
 import { LiveSession } from './live-session';
+import { extractKeyterms, mergeKeyterms } from './keyterms';
 
 const PATH_RE = /^\/ws\/session\/([0-9a-f-]{36})$/i;
 
@@ -58,6 +59,20 @@ export class LiveGateway implements OnModuleDestroy {
       ? await this.prisma.session.findUniqueOrThrow({ where: { id: sessionId } })
       : session;
 
+    // Keyterm prompting: manual terms from setup first, then terms extracted from CV + job.
+    const stored = (session.keyterms ?? {}) as { manual?: string[] };
+    const manual = stored.manual ?? [];
+    const job = session.job;
+    const auto = extractKeyterms([
+      session.cv.extractedText,
+      [job.company, job.position, job.description, job.notes ?? ''].join('\n'),
+    ]);
+    const keyterms = mergeKeyterms(manual, auto);
+    this.logger.log(`keyterms (${manual.length} manual + ${auto.length} auto → ${keyterms.length}): ${keyterms.join(', ')}`);
+    void this.prisma.session
+      .update({ where: { id: sessionId }, data: { keyterms: { manual, auto } } })
+      .catch((err) => this.logger.error(`saving keyterms failed: ${(err as Error).message}`));
+
     const live = new LiveSession(
       sessionId,
       ws,
@@ -71,6 +86,7 @@ export class LiveGateway implements OnModuleDestroy {
       },
       { config: this.config, llm: this.llm, prisma: this.prisma },
       { sttSecondsHr: fresh.sttSecondsHr, sttSecondsUser: fresh.sttSecondsUser },
+      keyterms,
     );
     this.sessions.set(sessionId, live);
     ws.on('close', () => {

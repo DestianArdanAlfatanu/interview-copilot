@@ -1,9 +1,28 @@
+/** What closed the HR turn (QD-01) or started the answer. */
+export type TurnCloseTrigger =
+  | 'speech_final' // Deepgram endpointing: silence ≥ DG_ENDPOINTING_MS after speech
+  | 'utterance_end' // Deepgram UtteranceEnd: word-timing gap ≥ DG_UTTERANCE_END_MS
+  | 'user_vad' // candidate started speaking (Silero VAD on the mic)
+  | 'answer_now' // Space
+  | 'manual' // typed question
+  | 'regenerate'; // R / "Ulang" / Space on an already-closed turn
+
+export const TRIGGER_LABEL: Record<TurnCloseTrigger, string> = {
+  speech_final: 'speech_final',
+  utterance_end: 'UtteranceEnd',
+  user_vad: 'VAD pengguna',
+  answer_now: 'Space',
+  manual: 'manual',
+  regenerate: 'ulang',
+};
+
 /** Wall-clock (epoch ms) timestamps per answer. Missing stages stay undefined. */
 export interface AnswerLatency {
   /** End of the last HR word, mapped from Deepgram's audio timeline to wall clock. */
   hrSpeechEnd?: number;
-  /** Turn buffer closed (speech_final / UtteranceEnd / user VAD / Space). */
+  /** Turn buffer closed; see `trigger` for what closed it. */
   turnClosed?: number;
+  trigger?: TurnCloseTrigger;
   requestSent?: number;
   firstToken?: number;
   /** Client-reported: first delta painted on screen. */

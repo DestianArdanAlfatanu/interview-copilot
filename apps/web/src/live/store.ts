@@ -44,6 +44,8 @@ interface LiveState {
   mock: boolean;
   mockLatency: LatencySummary;
   latencies: LatencySample[];
+  /** Deepgram keyterms the server primed both streams with. */
+  keyterms: string[];
   serverError?: string;
 
   reset(): void;
@@ -67,6 +69,7 @@ const initial = () => ({
   questions: 0,
   mock: false,
   mockLatency: { measured: 0 } as LatencySummary,
+  keyterms: [] as string[],
   latencies: [] as LatencySample[],
   serverError: undefined,
 });
@@ -132,7 +135,7 @@ export const useLive = create<LiveState>()((set) => ({
             latencies: e.lastLatency ? [e.lastLatency, ...s.latencies].slice(0, 50) : s.latencies,
           };
         case 'session.ready':
-          return { mock: e.mock };
+          return { mock: e.mock, keyterms: e.keyterms };
         case 'session.paused':
           return { paused: true };
         case 'session.resumed':

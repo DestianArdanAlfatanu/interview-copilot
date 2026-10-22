@@ -5,6 +5,10 @@ import { AlertCircle, FlaskConical, Loader2, Play } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   JOB_DESCRIPTION_MIN_CHARS,
+  MAX_AUTO_KEYTERMS,
+  MAX_KEYTERM_CHARS,
+  MAX_MANUAL_KEYTERMS,
+  parseKeyterms,
   type AnswerFormat,
   type AnswerLength,
   type Language,
@@ -37,6 +41,14 @@ export function SetupPage() {
   const [language, setLanguage] = useState<Language>('id');
   const [answerFormat, setFormat] = useState<AnswerFormat>('bullets');
   const [answerLength, setLength] = useState<AnswerLength>('short');
+  const [keytermInput, setKeytermInput] = useState('');
+  const keyterms = parseKeyterms(keytermInput);
+  const keytermError =
+    keyterms.length > MAX_MANUAL_KEYTERMS
+      ? `Maksimal ${MAX_MANUAL_KEYTERMS} istilah tambahan (sekarang ${keyterms.length}).`
+      : keyterms.find((t) => t.length > MAX_KEYTERM_CHARS)
+        ? `Setiap istilah maksimal ${MAX_KEYTERM_CHARS} karakter.`
+        : undefined;
 
   // Default to the active CV and the newest job once loaded.
   useEffect(() => {
@@ -52,7 +64,7 @@ export function SetupPage() {
       const cv: Pick<Cv, 'id'> = cvId === NEW ? await api.createCv({ name: cvName, text: cvText }) : { id: cvId };
       const job: Pick<Job, 'id'> =
         jobId === NEW ? await api.createJob({ company, position, description }) : { id: jobId };
-      return api.createSession({ cvId: cv.id, jobId: job.id, language, answerFormat, answerLength });
+      return api.createSession({ cvId: cv.id, jobId: job.id, language, answerFormat, answerLength, keyterms });
     },
     onSuccess: (s) => navigate(`/session/${s.id}`),
     onError: (err) => toast.error((err as Error).message),
@@ -62,6 +74,7 @@ export function SetupPage() {
   const canStart =
     (cvId !== NEW || cvText.trim().length >= 50) &&
     (jobId !== NEW || (company.trim() && position.trim() && !descTooShort)) &&
+    !keytermError &&
     !start.isPending;
 
   return (
@@ -191,6 +204,20 @@ export function SetupPage() {
               <option value="short">Pendek</option>
               <option value="medium">Sedang</option>
             </NativeSelect>
+          </div>
+          <div className="col-span-3 space-y-2">
+            <Label htmlFor="keyterms">Istilah tambahan untuk transkrip (opsional)</Label>
+            <Textarea
+              id="keyterms"
+              value={keytermInput}
+              onChange={(e) => setKeytermInput(e.target.value)}
+              placeholder="Mis. Smartani, Next.js, nama interviewer — pisahkan dengan koma atau baris baru"
+              className="min-h-[60px] text-xs"
+            />
+            <p className={keytermError ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'}>
+              {keytermError ??
+                `Hingga ${MAX_AUTO_KEYTERMS} istilah teknis dan nama proyek diambil otomatis dari CV dan lowongan saat sesi dimulai. Tambahkan yang sering salah dengar di sini${keyterms.length ? ` (${keyterms.length} istilah)` : ''}.`}
+            </p>
           </div>
         </CardContent>
       </Card>

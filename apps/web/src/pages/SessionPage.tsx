@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { AlertCircle, ChevronDown, Mic, MonitorUp, Pause, Play, Power, RefreshCw, Send } from 'lucide-react';
 import type { MicVAD } from '@ricky0123/vad-web';
-import { AUDIO_CHANNEL, type AudioChannel } from '@ic/shared';
+import { AUDIO_CHANNEL, TRIGGER_LABEL, type AudioChannel } from '@ic/shared';
 import { api } from '@/lib/api';
 import { cn, formatDuration, formatUsd } from '@/lib/utils';
 import { AudioPipeline, CaptureError, captureMic, captureTabAudio, isSupportedBrowser } from '@/audio/capture';
@@ -20,6 +20,9 @@ import { AnswerCard, AudioMeter, StatusPill, TranscriptLineView } from '@/compon
 type LevelCb = (level: number) => void;
 
 const fmtSec = (ms?: number) => (ms === undefined ? '–' : `${(ms / 1000).toFixed(1)}s`);
+
+/** Normal closes in the WhatsApp test were 0.6–1.3 s; anything slower is worth a look. */
+const SLOW_TURN_CLOSE_MS = 1_500;
 
 /** Tiny pub-sub so meters update without React re-renders. */
 function useLevelBus() {
@@ -282,6 +285,11 @@ export function SessionPage() {
             MODE MOCK
           </Badge>
         )}
+        {live.keyterms.length > 0 && (
+          <Badge variant="outline" title={`Keyterm Deepgram:\n${live.keyterms.join(', ')}`}>
+            {live.keyterms.length} istilah
+          </Badge>
+        )}
         <StatusPill label="HR" state={live.stt.hr} />
         <StatusPill label="Saya" state={live.stt.user} />
         <AudioMeter label="HR" subscribe={subscribeHr} />
@@ -402,6 +410,7 @@ export function SessionPage() {
                 <table className="w-full text-xs tabular-nums">
                   <thead className="text-muted-foreground">
                     <tr className="text-left">
+                      <th className="font-normal">pemicu</th>
                       <th className="font-normal">turn ditutup</th>
                       <th className="font-normal">request</th>
                       <th className="font-normal">token pertama</th>
@@ -413,7 +422,13 @@ export function SessionPage() {
                   <tbody>
                     {live.latencies.map((l) => (
                       <tr key={l.answerId}>
-                        <td>{l.stages.turnClosed ?? '–'}</td>
+                        <td>{l.trigger ? TRIGGER_LABEL[l.trigger] : '–'}</td>
+                        <td
+                          className={cn((l.stages.turnClosed ?? 0) > SLOW_TURN_CLOSE_MS && 'font-semibold text-warning')}
+                          title={(l.stages.turnClosed ?? 0) > SLOW_TURN_CLOSE_MS ? 'Penutupan giliran lambat' : undefined}
+                        >
+                          {l.stages.turnClosed ?? '–'}
+                        </td>
                         <td>{l.stages.requestSent ?? '–'}</td>
                         <td>{l.stages.firstToken ?? '–'}</td>
                         <td className="font-semibold">{l.stages.firstTokenRendered ?? '–'}</td>
