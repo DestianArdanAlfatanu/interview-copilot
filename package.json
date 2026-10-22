@@ -7,6 +7,7 @@
   ],
   "scripts": {
     "dev": "concurrently -n api,web -c blue,magenta \"npm run dev -w @ic/api\" \"npm run dev -w @ic/web\"",
+    "start:local": "npm run build && node apps/api/dist/main.js --serve-web",
     "build": "npm run build -w @ic/shared && npm run build -w @ic/api && npm run build -w @ic/web",
     "typecheck": "npm run build -w @ic/shared && npm run typecheck -w @ic/api && npm run typecheck -w @ic/web",
     "db:migrate": "npm run prisma:migrate -w @ic/api --"

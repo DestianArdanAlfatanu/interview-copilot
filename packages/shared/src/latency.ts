@@ -2,15 +2,23 @@
 export type TurnCloseTrigger =
   | 'speech_final' // Deepgram endpointing: silence ≥ DG_ENDPOINTING_MS after speech
   | 'utterance_end' // Deepgram UtteranceEnd: word-timing gap ≥ DG_UTTERANCE_END_MS
-  | 'user_vad' // candidate started speaking (Silero VAD on the mic)
+  | 'user_vad' // candidate has been speaking ≥ USER_VAD_CLOSE_MS (Silero VAD on the mic)
+  | 'finalize' // we sent Deepgram a Finalize (see `finalizeBy`) and closed on its final
   | 'answer_now' // Space
   | 'manual' // typed question
   | 'regenerate'; // R / "Ulang" / Space on an already-closed turn
+
+/** Signals that may send Deepgram a Finalize when HR's words aren't final yet. */
+export type FinalizeCause = 'utterance_end' | 'answer_now' | 'user_vad';
+
+/** The candidate must speak this long before it counts as "HR is done" (so "hmm"/"iya" doesn't). */
+export const USER_VAD_CLOSE_MS = 400;
 
 export const TRIGGER_LABEL: Record<TurnCloseTrigger, string> = {
   speech_final: 'speech_final',
   utterance_end: 'UtteranceEnd',
   user_vad: 'VAD pengguna',
+  finalize: 'finalize',
   answer_now: 'Space',
   manual: 'manual',
   regenerate: 'ulang',
@@ -23,6 +31,8 @@ export interface AnswerLatency {
   /** Turn buffer closed; see `trigger` for what closed it. */
   turnClosed?: number;
   trigger?: TurnCloseTrigger;
+  /** When trigger = 'finalize': the signal that made us send it. */
+  finalizeBy?: FinalizeCause;
   requestSent?: number;
   firstToken?: number;
   /** Client-reported: first delta painted on screen. */

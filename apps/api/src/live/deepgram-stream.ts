@@ -17,6 +17,8 @@ export interface SttResult {
   text: string;
   isFinal: boolean;
   speechFinal: boolean;
+  /** This final was forced by our Finalize message rather than Deepgram's own endpointing. */
+  fromFinalize: boolean;
   /** Wall-clock (epoch ms) of the segment's start / last word end, mapped from Deepgram's audio timeline. */
   startWall: number;
   endWall: number;
@@ -79,6 +81,16 @@ export class DeepgramStream extends EventEmitter {
     while (this.pendingBytes > MAX_BUFFER_BYTES && this.pending.length) {
       this.pendingBytes -= this.pending.shift()!.length;
     }
+  }
+
+  /**
+   * Ask Deepgram to finalize the audio it has so far; the answer is a final result with
+   * from_finalize = true. Returns false if the connection isn't open.
+   */
+  finalize(): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN) return false;
+    this.ws.send(JSON.stringify({ type: 'Finalize' }));
+    return true;
   }
 
   close() {
@@ -208,8 +220,9 @@ export class DeepgramStream extends EventEmitter {
       const alt = msg.channel?.alternatives?.[0];
       const text: string = (alt?.transcript ?? '').trim();
       if (!text) {
-        // An empty speech_final still ends the utterance.
-        if (msg.speech_final) this.emit('result', this.result('', msg, alt));
+        // Empty finals still matter: they end the utterance (speech_final), answer a Finalize,
+        // and tell the session there is no pending interim text any more.
+        if (msg.is_final || msg.speech_final) this.emit('result', this.result('', msg, alt));
         return;
       }
       this.emit('result', this.result(text, msg, alt));
@@ -226,6 +239,7 @@ export class DeepgramStream extends EventEmitter {
       text,
       isFinal: Boolean(msg.is_final),
       speechFinal: Boolean(msg.speech_final),
+      fromFinalize: Boolean(msg.from_finalize),
       startWall: this.toWall(start),
       endWall: this.toWall(end),
     };

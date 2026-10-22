@@ -422,7 +422,10 @@ export function SessionPage() {
                   <tbody>
                     {live.latencies.map((l) => (
                       <tr key={l.answerId}>
-                        <td>{l.trigger ? TRIGGER_LABEL[l.trigger] : '–'}</td>
+                        <td>
+                          {l.trigger ? TRIGGER_LABEL[l.trigger] : '–'}
+                          {l.finalizeBy && ` ← ${TRIGGER_LABEL[l.finalizeBy]}`}
+                        </td>
                         <td
                           className={cn((l.stages.turnClosed ?? 0) > SLOW_TURN_CLOSE_MS && 'font-semibold text-warning')}
                           title={(l.stages.turnClosed ?? 0) > SLOW_TURN_CLOSE_MS ? 'Penutupan giliran lambat' : undefined}

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { SPEAKERS } from './constants';
-import type { LatencySummary, TurnCloseTrigger } from './latency';
+import type { FinalizeCause, LatencySummary, TurnCloseTrigger } from './latency';
 
 /* ---------- client → server (JSON text frames; audio goes as binary frames) ---------- */
 
@@ -27,6 +27,7 @@ export interface AnswerLatencyPayload {
   /** HR end of speech → first token on screen (or server first token if not rendered yet). */
   firstWordMs?: number;
   trigger?: TurnCloseTrigger;
+  finalizeBy?: FinalizeCause;
   stages: Record<string, number | undefined>;
 }
 

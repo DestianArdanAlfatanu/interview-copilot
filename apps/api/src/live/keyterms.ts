@@ -42,6 +42,14 @@ const STOP = new Set([
   // generic tech-CV nouns
   'database', 'databases', 'tools', 'tool', 'framework', 'frameworks', 'library', 'libraries', 'languages',
   'founder', 'co-founder', 'vocational', 'school', 'bachelor', 'sarjana', 'diploma',
+  // common words that show up capitalized in CV headings ("Key Achievements", "Faculty of …")
+  'faculty', 'fakultas', 'key', 'team', 'teams', 'project', 'center', 'centre', 'department', 'departemen',
+  'division', 'divisi', 'member', 'anggota', 'head', 'ketua', 'leader', 'participant', 'peserta', 'award',
+  'awards', 'achievement', 'achievements', 'prestasi', 'reference', 'references', 'referensi', 'language',
+  'bahasa', 'english', 'hobby', 'hobbies', 'interest', 'interests', 'volunteer', 'relawan', 'program',
+  'programs', 'course', 'courses', 'kursus', 'pelatihan', 'workshop', 'seminar', 'competition', 'lomba',
+  'winner', 'juara', 'best', 'top', 'new', 'main', 'other', 'others', 'lainnya', 'personal', 'professional',
+  'technical', 'teknis', 'soft', 'hard', 'general', 'umum', 'client', 'clients', 'klien', 'user', 'users',
   // contact block and regions
   'address', 'alamat', 'phone', 'telepon', 'email', 'linkedin', 'portfolio', 'portofolio', 'website', 'area',
   'central', 'west', 'east', 'north', 'south', 'jawa', 'java', 'tengah', 'barat', 'timur', 'utara', 'selatan',

@@ -27,12 +27,14 @@ export class LiveGateway implements OnModuleDestroy {
     private readonly llm: LlmService,
   ) {}
 
-  attach(server: Server) {
+  /** extraOrigins: when the API also serves the frontend (start:local), its own origin(s). */
+  attach(server: Server, extraOrigins: string[] = []) {
+    const allowed = new Set([this.config.get('WEB_ORIGIN'), ...extraOrigins]);
     server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
       const path = (req.url ?? '').split('?')[0];
       const match = PATH_RE.exec(path);
       if (!match) return; // not ours
-      if (req.headers.origin !== this.config.get('WEB_ORIGIN')) {
+      if (!allowed.has(req.headers.origin ?? '')) {
         socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
         socket.destroy();
         return;

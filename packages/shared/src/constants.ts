@@ -21,6 +21,17 @@ export type Speaker = (typeof SPEAKERS)[number];
 
 export const JOB_DESCRIPTION_MIN_CHARS = 200;
 
+/**
+ * SET-02 endpointing presets for the M2 settings page (not wired yet; .env DG_* values apply).
+ * utteranceEndMs can't go below 1000 (Deepgram minimum).
+ */
+export const ENDPOINTING_PRESETS = {
+  fast: { label: 'Cepat', endpointingMs: 200, utteranceEndMs: 1000 },
+  normal: { label: 'Normal', endpointingMs: 300, utteranceEndMs: 1000 },
+  patient: { label: 'Sabar', endpointingMs: 500, utteranceEndMs: 1500 },
+} as const;
+export type EndpointingPreset = keyof typeof ENDPOINTING_PRESETS;
+
 /** Deepgram keyterm prompting: auto-extracted from CV + job, plus manual extras from setup. */
 export const MAX_AUTO_KEYTERMS = 50;
 export const MAX_MANUAL_KEYTERMS = 30;

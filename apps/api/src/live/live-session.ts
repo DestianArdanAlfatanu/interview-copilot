@@ -17,6 +17,8 @@ import {
   type ServerEvent,
   type Speaker,
   type TurnCloseTrigger,
+  type FinalizeCause,
+  USER_VAD_CLOSE_MS,
 } from '@ic/shared';
 import type { AppConfig } from '../config/app-config.service';
 import type { PrismaService } from '../prisma/prisma.service';
@@ -74,8 +76,12 @@ export class LiveSession {
 
   private turns: Turn[] = [];
   private hrBuffer: Segment[] = [];
-  /** Latest HR interim text not yet finalized by Deepgram (for diagnosing slow turn closes). */
+  /** Latest HR interim text Deepgram hasn't finalized yet ('' = everything said is final). */
   private hrInterim = '';
+  /** Set once we've sent Finalize for the current turn (max one per turn); cleared when it closes. */
+  private finalizePending?: { by: FinalizeCause; force: boolean };
+  /** Fires USER_VAD_CLOSE_MS after the candidate starts talking, unless they stop first. */
+  private userVadTimer?: NodeJS.Timeout;
   private active?: ActiveAnswer;
   /** Most recent answer (any state) — target of Space with empty buffer / R. */
   private last?: ActiveAnswer;
@@ -119,7 +125,7 @@ export class LiveSession {
       const s = this.streams[speaker];
       s.on('status', (state) => this.send({ type: 'stt.status', channel: speaker, state }));
       s.on('result', (r: SttResult) => this.onTranscript(speaker, r));
-      if (speaker === 'hr') s.on('utteranceEnd', () => this.closeTurn('utterance_end'));
+      if (speaker === 'hr') s.on('utteranceEnd', () => this.requestClose('utterance_end'));
       s.start();
     }
 
@@ -181,11 +187,15 @@ export class LiveSession {
     }
     switch (event.type) {
       case 'vad.user':
-        // QD-01: the candidate starting to talk means HR has finished.
-        if (event.state === 'start') this.closeTurn('user_vad');
+        // QD-01: the candidate talking means HR has finished — but only once they've talked for
+        // USER_VAD_CLOSE_MS, so a short "hmm"/"iya" while HR is mid-question doesn't cut it.
+        clearTimeout(this.userVadTimer);
+        if (event.state === 'start') {
+          this.userVadTimer = setTimeout(() => this.requestClose('user_vad'), USER_VAD_CLOSE_MS);
+        }
         break;
       case 'control.answer_now':
-        if (this.hrBuffer.length) this.closeTurn('answer_now', true);
+        if (this.hrBuffer.length || this.hrInterim) this.requestClose('answer_now');
         else if (this.last) this.regenerate(this.last.id, true);
         break;
       case 'control.manual_question':
@@ -252,13 +262,15 @@ export class LiveSession {
       if (r.isFinal || words >= INTERIM_ABORT_MIN_WORDS) this.takeBackActiveTurn();
     }
 
-    if (r.text) this.hrInterim = r.isFinal ? '' : r.text;
+    if (r.isFinal) this.hrInterim = '';
+    else if (r.text) this.hrInterim = r.text;
 
     if (r.isFinal && r.text) {
       const utteranceId = this.saveUtterance('hr', r);
       this.hrBuffer.push({ utteranceId, text: r.text, endWall: r.endWall });
     }
-    if (r.speechFinal) this.closeTurn('speech_final');
+    if (r.fromFinalize && this.finalizePending) this.closeTurn('finalize', this.finalizePending.force);
+    else if (r.speechFinal) this.closeTurn('speech_final');
   }
 
   // ---------------------------------------------------------------- turns
@@ -275,14 +287,38 @@ export class LiveSession {
     return turn;
   }
 
-  private closeTurn(trigger: TurnCloseTrigger, force = false) {
+  /**
+   * A "HR is done" signal other than Deepgram's own endpointing. If HR's last words are still
+   * interim, Deepgram would only finalize them seconds later on noisy call audio (the 3 s closes
+   * in the WhatsApp test), so ask it to Finalize now — once per turn — and close on that final.
+   */
+  private requestClose(cause: FinalizeCause) {
     if (this.paused || this.ended) return;
-    if (this.hrBuffer.length === 0) {
-      // A close signal arrived but Deepgram hasn't finalized HR's words yet — the turn will only
-      // close when that final shows up. This is the slow path behind multi-second closes.
-      if (this.hrInterim) this.logger.log(`turn: ${trigger} ignored, HR text not final yet: "${this.hrInterim}"`);
+    const force = cause === 'answer_now';
+    if (!this.hrInterim) {
+      this.closeTurn(cause, force);
       return;
     }
+    if (this.finalizePending) {
+      // Already asked for this turn; Space still upgrades the pending close to "must answer".
+      this.finalizePending.force ||= force;
+      return;
+    }
+    if (!this.streams.hr.finalize()) {
+      this.closeTurn(cause, force); // STT is down: close with whatever is final
+      return;
+    }
+    this.finalizePending = { by: cause, force };
+    this.logger.log(`turn: ${cause} → Finalize (HR not final yet: "${this.hrInterim}")`);
+  }
+
+  private closeTurn(trigger: TurnCloseTrigger, force = false) {
+    const finalizeBy = trigger === 'finalize' ? this.finalizePending?.by : undefined;
+    // A Finalize answer settles the request even when nothing was final (the "speech" was noise),
+    // so the next real turn may Finalize again.
+    if (trigger === 'finalize') this.finalizePending = undefined;
+    if (this.paused || this.ended || this.hrBuffer.length === 0) return;
+    this.finalizePending = undefined;
     const segments = this.hrBuffer;
     this.hrBuffer = [];
     const question = segments.map((s) => s.text).join(' ');
@@ -290,7 +326,8 @@ export class LiveSession {
     const turnRef = this.pushTurn('hr', question); // QD-04: kept in context even if skipped
     const hrSpeechEnd = segments.at(-1)!.endWall;
     const turnClosed = Date.now();
-    this.logger.log(`turn closed by ${trigger} after ${turnClosed - hrSpeechEnd} ms: ${question}`);
+    const via = finalizeBy ? ` (← ${finalizeBy})` : '';
+    this.logger.log(`turn closed by ${trigger}${via} after ${turnClosed - hrSpeechEnd} ms: ${question}`);
     this.ask({
       question,
       segments,
@@ -298,7 +335,7 @@ export class LiveSession {
       turnRef,
       manual: false,
       force,
-      latency: { hrSpeechEnd, turnClosed, trigger },
+      latency: { hrSpeechEnd, turnClosed, trigger, finalizeBy },
     });
   }
 
@@ -518,7 +555,7 @@ export class LiveSession {
     a.latencyCounted = true;
     (a.latency.mock ? this.mockSamples : this.firstWordSamples).push(ms);
     this.logger.log(
-      `${a.latency.mock ? 'MOCK ' : ''}latency ${ms} ms | trigger=${a.latency.trigger} ${stageLog(a.latency)} | in=${a.usage?.inputTokens} cache_read=${a.usage?.cacheReadTokens} cache_write=${a.usage?.cacheWriteTokens} out=${a.usage?.outputTokens}`,
+      `${a.latency.mock ? 'MOCK ' : ''}latency ${ms} ms | trigger=${a.latency.trigger}${a.latency.finalizeBy ? `←${a.latency.finalizeBy}` : ''} ${stageLog(a.latency)} | in=${a.usage?.inputTokens} cache_read=${a.usage?.cacheReadTokens} cache_write=${a.usage?.cacheWriteTokens} out=${a.usage?.outputTokens}`,
     );
     this.emitMetrics({ ...latencyPayload(a.latency), answerId: a.id, mock: Boolean(a.latency.mock) });
   }
@@ -618,6 +655,7 @@ export class LiveSession {
     this.ended = true;
     this.abortActive('session_end');
     for (const t of this.timers) clearInterval(t);
+    clearTimeout(this.userVadTimer);
     this.streams.hr.close();
     this.streams.user.close();
     const costs = this.costs();
@@ -679,6 +717,7 @@ function latencyPayload(l: AnswerLatency): AnswerLatencyPayload {
   return {
     firstWordMs: firstWordLatencyMs(l),
     trigger: l.trigger,
+    finalizeBy: l.finalizeBy,
     stages: {
       turnClosed: rel(l.turnClosed),
       requestSent: rel(l.requestSent),

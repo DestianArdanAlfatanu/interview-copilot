@@ -1,8 +1,9 @@
 import type { MicVAD } from '@ricky0123/vad-web';
 
 /**
- * AUD-04: Silero VAD on the mic stream. "start" fires on onSpeechRealStart (speech lasted
- * ≥ minSpeechMs) rather than onSpeechStart, so a cough or click doesn't close the HR turn.
+ * AUD-04: Silero VAD on the mic stream. "start" fires as soon as speech is detected and "stop"
+ * when it ends or turns out to be a misfire; the server only treats it as "HR is done" once the
+ * candidate has kept talking for USER_VAD_CLOSE_MS, so "hmm"/"iya" doesn't cut HR off.
  * Loaded lazily: the onnxruntime bundle is large, and a load failure must not break the page.
  */
 export async function startUserVad(
@@ -22,7 +23,8 @@ export async function startUserVad(
     positiveSpeechThreshold: 0.6,
     negativeSpeechThreshold: 0.4,
     minSpeechMs: 250,
-    onSpeechRealStart: () => onChange('start'),
+    onSpeechStart: () => onChange('start'),
     onSpeechEnd: () => onChange('stop'),
+    onVADMisfire: () => onChange('stop'),
   });
 }
