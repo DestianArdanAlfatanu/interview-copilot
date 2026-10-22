@@ -1,0 +1,39 @@
+{
+  "name": "@ic/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "predev": "npm run build -w @ic/shared",
+    "dev": "nest start --watch --preserveWatchOutput",
+    "build": "nest build",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prisma:migrate": "dotenv -e ../../.env -- prisma migrate dev",
+    "prisma:generate": "prisma generate",
+    "postinstall": "prisma generate"
+  },
+  "prisma": {
+    "schema": "prisma/schema.prisma"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
+    "@ic/shared": "*",
+    "@nestjs/common": "^11.1.6",
+    "@nestjs/config": "^4.0.2",
+    "@nestjs/core": "^11.1.6",
+    "@nestjs/platform-express": "^11.1.6",
+    "@prisma/client": "~6.19.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "ws": "^8.18.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.10",
+    "@types/express": "^5.0.3",
+    "@types/node": "^20.19.0",
+    "@types/ws": "^8.18.1",
+    "dotenv-cli": "^8.0.0",
+    "prisma": "~6.19.0"
+  }
+}

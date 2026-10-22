@@ -1,0 +1,21 @@
+{
+  "name": "interview-copilot",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,magenta \"npm run dev -w @ic/api\" \"npm run dev -w @ic/web\"",
+    "build": "npm run build -w @ic/shared && npm run build -w @ic/api && npm run build -w @ic/web",
+    "typecheck": "npm run build -w @ic/shared && npm run typecheck -w @ic/api && npm run typecheck -w @ic/web",
+    "db:migrate": "npm run prisma:migrate -w @ic/api --"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "~5.6.3"
+  },
+  "engines": {
+    "node": ">=20.11"
+  }
+}

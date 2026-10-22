@@ -1,0 +1,136 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model CvProfile {
+  id            String         @id @default(uuid()) @db.Char(36)
+  name          String         @db.VarChar(191)
+  filePath      String?        @map("file_path") @db.VarChar(512)
+  extractedText String         @map("extracted_text") @db.MediumText
+  isActive      Boolean        @default(false) @map("is_active")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  analyses      PrepAnalysis[]
+  sessions      Session[]
+
+  @@map("cv_profiles")
+}
+
+model Job {
+  id          String         @id @default(uuid()) @db.Char(36)
+  company     String         @db.VarChar(191)
+  position    String         @db.VarChar(191)
+  description String         @db.MediumText
+  notes       String?        @db.Text
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  analyses    PrepAnalysis[]
+  sessions    Session[]
+
+  @@map("jobs")
+}
+
+model PrepAnalysis {
+  id             String    @id @default(uuid()) @db.Char(36)
+  cvId           String    @map("cv_id") @db.Char(36)
+  jobId          String    @map("job_id") @db.Char(36)
+  model          String    @db.VarChar(64)
+  matchJson      Json?     @map("match_json")
+  answerBankJson Json?     @map("answer_bank_json")
+  /// pending | running | done | error
+  status         String    @default("pending") @db.VarChar(16)
+  inputTokens    Int       @default(0) @map("input_tokens")
+  outputTokens   Int       @default(0) @map("output_tokens")
+  costUsd        Decimal   @default(0) @map("cost_usd") @db.Decimal(10, 6)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  cv             CvProfile @relation(fields: [cvId], references: [id], onDelete: Cascade)
+  job            Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  sessions       Session[]
+
+  @@index([cvId, jobId])
+  @@map("prep_analyses")
+}
+
+model Session {
+  id             String        @id @default(uuid()) @db.Char(36)
+  cvId           String        @map("cv_id") @db.Char(36)
+  jobId          String        @map("job_id") @db.Char(36)
+  prepId         String?       @map("prep_id") @db.Char(36)
+  /// id | en
+  language       String        @db.VarChar(4)
+  /// paragraph | bullets
+  answerFormat   String        @map("answer_format") @db.VarChar(16)
+  /// short | medium
+  answerLength   String        @map("answer_length") @db.VarChar(16)
+  /// setup | live | paused | ended
+  status         String        @default("setup") @db.VarChar(16)
+  startedAt      DateTime?     @map("started_at")
+  endedAt        DateTime?     @map("ended_at")
+  sttSecondsHr   Int           @default(0) @map("stt_seconds_hr")
+  sttSecondsUser Int           @default(0) @map("stt_seconds_user")
+  sttCostUsd     Decimal       @default(0) @map("stt_cost_usd") @db.Decimal(10, 6)
+  llmCostUsd     Decimal       @default(0) @map("llm_cost_usd") @db.Decimal(10, 6)
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+  cv             CvProfile     @relation(fields: [cvId], references: [id], onDelete: Cascade)
+  job            Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  prep           PrepAnalysis? @relation(fields: [prepId], references: [id], onDelete: SetNull)
+  utterances     Utterance[]
+  answers        Answer[]
+
+  @@map("sessions")
+}
+
+model Utterance {
+  id        String   @id @default(uuid()) @db.Char(36)
+  sessionId String   @map("session_id") @db.Char(36)
+  /// hr | user
+  speaker   String   @db.VarChar(8)
+  text      String   @db.Text
+  startMs   Int      @map("start_ms")
+  endMs     Int      @map("end_ms")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, startMs])
+  @@map("utterances")
+}
+
+model Answer {
+  id           String   @id @default(uuid()) @db.Char(36)
+  sessionId    String   @map("session_id") @db.Char(36)
+  utteranceIds Json?    @map("utterance_ids")
+  questionText String   @map("question_text") @db.Text
+  answerText   String   @map("answer_text") @db.Text
+  /// done | skipped | aborted | error
+  status       String   @db.VarChar(16)
+  outOfCv      Boolean  @default(false) @map("out_of_cv")
+  /// -1 | 0 | 1 (null = not rated)
+  rating       Int?
+  latencyJson  Json?    @map("latency_json")
+  inputTokens  Int      @default(0) @map("input_tokens")
+  cachedTokens Int      @default(0) @map("cached_tokens")
+  outputTokens Int      @default(0) @map("output_tokens")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  session      Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@map("answers")
+}
+
+model Setting {
+  key       String   @id @db.VarChar(64)
+  value     Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("settings")
+}

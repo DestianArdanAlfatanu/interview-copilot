@@ -1,0 +1,86 @@
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import type { IncomingMessage, Server } from 'node:http';
+import type { Duplex } from 'node:stream';
+import { WebSocketServer, type WebSocket } from 'ws';
+import type { Language, AnswerFormat, AnswerLength } from '@ic/shared';
+import { AppConfig } from '../config/app-config.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { LlmService } from './llm.service';
+import { LiveSession } from './live-session';
+
+const PATH_RE = /^\/ws\/session\/([0-9a-f-]{36})$/i;
+
+/**
+ * Raw `ws` server on Nest's HTTP server: one socket per live session at /ws/session/:id.
+ * (Nest's WS gateways don't route on path params, so upgrades are handled here.)
+ */
+@Injectable()
+export class LiveGateway implements OnModuleDestroy {
+  private readonly logger = new Logger(LiveGateway.name);
+  private readonly wss = new WebSocketServer({ noServer: true, maxPayload: 1 << 20 });
+  private readonly sessions = new Map<string, LiveSession>();
+
+  constructor(
+    private readonly config: AppConfig,
+    private readonly prisma: PrismaService,
+    private readonly llm: LlmService,
+  ) {}
+
+  attach(server: Server) {
+    server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+      const path = (req.url ?? '').split('?')[0];
+      const match = PATH_RE.exec(path);
+      if (!match) return; // not ours
+      if (req.headers.origin !== this.config.get('WEB_ORIGIN')) {
+        socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      this.wss.handleUpgrade(req, socket, head, (ws) => void this.onConnection(ws, match[1]));
+    });
+  }
+
+  private async onConnection(ws: WebSocket, sessionId: string) {
+    ws.binaryType = 'nodebuffer';
+    const session = await this.prisma.session.findUnique({
+      where: { id: sessionId },
+      include: { cv: true, job: true, prep: true },
+    });
+    if (!session || session.status === 'ended') {
+      ws.send(JSON.stringify({ type: 'error', code: 'session_not_found', message: 'Sesi tidak ditemukan atau sudah berakhir.' }));
+      ws.close(4404, 'not found');
+      return;
+    }
+
+    const previous = this.sessions.get(sessionId);
+    if (previous) await previous.replace();
+    const fresh = previous
+      ? await this.prisma.session.findUniqueOrThrow({ where: { id: sessionId } })
+      : session;
+
+    const live = new LiveSession(
+      sessionId,
+      ws,
+      {
+        language: session.language as Language,
+        format: session.answerFormat as AnswerFormat,
+        length: session.answerLength as AnswerLength,
+        cvText: session.cv.extractedText,
+        job: session.job,
+        analysis: '', // M1: prep analysis + answer bank
+      },
+      { config: this.config, llm: this.llm, prisma: this.prisma },
+      { sttSecondsHr: fresh.sttSecondsHr, sttSecondsUser: fresh.sttSecondsUser },
+    );
+    this.sessions.set(sessionId, live);
+    ws.on('close', () => {
+      if (this.sessions.get(sessionId) === live) this.sessions.delete(sessionId);
+    });
+    live.start();
+    this.logger.log(`session ${sessionId} connected`);
+  }
+
+  onModuleDestroy() {
+    for (const ws of this.wss.clients) ws.close(1001, 'server shutdown');
+  }
+}
